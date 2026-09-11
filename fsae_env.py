@@ -4,7 +4,12 @@ from gymnasium import spaces
 import mujoco
 import mujoco.viewer
 import numpy as np
-import json
+from pathlib import Path
+
+from training_stats import TrainingHistory, atomic_write_json
+
+
+BASE_DIR = Path(__file__).resolve().parent
 
 
 class FSAEEnv(gym.Env):
@@ -20,6 +25,12 @@ class FSAEEnv(gym.Env):
         self.step_count = 0          # current episode
         self.total_env_steps = 0     # entire run
         self.episode_count = 0       # completed episodes
+        self.episode_reward = 0.0
+        self.episode_speed_total = 0.0
+        self.episode_peak_speed = 0.0
+        self.episode_track_distance_total = 0.0
+        self.episode_best_waypoint = 0
+        self.history = TrainingHistory(BASE_DIR / "training_history.json")
         
 
         super().__init__()
@@ -256,6 +267,11 @@ class FSAEEnv(gym.Env):
         self.step_count = 0
 
         self.last_action[:] = 0.0
+        self.episode_reward = 0.0
+        self.episode_speed_total = 0.0
+        self.episode_peak_speed = 0.0
+        self.episode_track_distance_total = 0.0
+        self.episode_best_waypoint = 0
 
         if self.render_mode == "human":
             self.render()
@@ -347,6 +363,16 @@ class FSAEEnv(gym.Env):
 
         observation = self._get_obs()
 
+        speed = float(np.linalg.norm(self.data.qvel[0:2]))
+        self.episode_reward += float(reward)
+        self.episode_speed_total += speed
+        self.episode_peak_speed = max(self.episode_peak_speed, speed)
+        self.episode_track_distance_total += float(track_distance)
+        self.episode_best_waypoint = max(
+            self.episode_best_waypoint,
+            self.waypoint_index,
+        )
+
         info = {
             "waypoint": self.waypoint_index,
             "track_distance": track_distance
@@ -358,6 +384,21 @@ class FSAEEnv(gym.Env):
 
         if terminated or truncated:
             self.episode_count += 1
+            self.history.record({
+                "iteration": self.episode_count,
+                "total_steps": self.total_env_steps,
+                "episode_steps": self.step_count,
+                "episode_reward": self.episode_reward,
+                "waypoints_reached": self.episode_best_waypoint,
+                "total_waypoints": len(self.waypoints),
+                "completed_course": self.waypoint_index >= len(self.waypoints),
+                "peak_speed": self.episode_peak_speed,
+                "average_speed": self.episode_speed_total / self.step_count,
+                "average_track_distance": (
+                    self.episode_track_distance_total / self.step_count
+                ),
+                "final_track_distance": float(track_distance),
+            })
 
         stats = {
             "episode": self.episode_count,
@@ -373,13 +414,11 @@ class FSAEEnv(gym.Env):
             "throttle": float(action[0]),
             "steering": float(action[1]),
 
-            "speed": float(
-                np.linalg.norm(self.data.qvel[0:2])
-            )
+            "speed": speed,
+            "episode_reward": self.episode_reward,
         }
-        
-        with open("training_status.json", "w") as f:
-            json.dump(stats, f)
+
+        atomic_write_json(BASE_DIR / "training_status.json", stats)
 
         # if self.render_mode == "human":
             #print(
