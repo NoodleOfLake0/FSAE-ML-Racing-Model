@@ -1,13 +1,15 @@
-import json
 from pathlib import Path
 
-from flask import Flask, render_template
+from flask import Flask, jsonify, render_template
+
+from training_stats import load_json
 
 
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 STATS_FILE = BASE_DIR / "training_status.json"
+HISTORY_FILE = BASE_DIR / "training_history.json"
 
 
 @app.route("/")
@@ -17,13 +19,12 @@ def dashboard():
 
 @app.route("/api/status")
 def status():
-
-    try:
-        with open(STATS_FILE, "r") as f:
-            return json.load(f)
-
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {
+    stats = load_json(STATS_FILE, {})
+    saved = load_json(HISTORY_FILE, {})
+    if not isinstance(saved, dict):
+        saved = {}
+    if not stats:
+        stats = {
             "episode": 0,
             "total_steps": 0,
             "episode_step": 0,
@@ -36,6 +37,11 @@ def status():
             "speed": 0,
             "waiting": True
         }
+    stats["best_car"] = saved.get("best")
+    stats["history"] = saved.get("history", [])[-12:]
+    response = jsonify(stats)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
 
 
 if __name__ == "__main__":
