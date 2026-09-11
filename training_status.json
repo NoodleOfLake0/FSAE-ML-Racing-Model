@@ -1,1 +1,1 @@
-{"episode": 43, "total_steps": 15843, "episode_step": 358, "waypoint": 1, "total_waypoints": 17, "track_distance": 0.17335138536194492, "reward": -0.00047797750216432844, "throttle": -0.8718307018280029, "steering": -0.4597940444946289, "speed": 0.2661312883040429}
+{"episode": 0, "total_steps": 11, "episode_step": 10, "waypoint": 0, "total_waypoints": 17, "track_distance": 0.18587967013225043, "reward": 0.024222295183330134, "throttle": -0.14640679955482483, "steering": -0.8984988331794739, "speed": 0.24979734747651047, "episode_reward": 0.1412033284798181}

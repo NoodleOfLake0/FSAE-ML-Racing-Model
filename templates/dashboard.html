@@ -46,8 +46,23 @@
         td { padding:12px; text-align:right; border-top:1px solid var(--line); }
         tbody tr:first-child td { color:#d9eaff; }
         .complete { color:var(--green); font-weight:700; }
-        @media(max-width:800px){.grid{grid-template-columns:1fr 1fr}.best-grid{grid-template-columns:1fr 1fr}.header{align-items:flex-start}.wide{grid-column:1/-1}}
-        @media(max-width:560px){.container{padding:24px 16px 40px}.grid{grid-template-columns:1fr}.controls,.best-grid{grid-template-columns:1fr}.header{display:block}.status{width:max-content;margin-top:16px}.wide{grid-column:auto}}
+        .settings { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; }
+        .field { display:flex; flex-direction:column; gap:7px; color:var(--muted); font-size:12px; font-weight:650; }
+        input,select,button { font:inherit; }
+        input,select { width:100%; padding:10px 11px; border:1px solid var(--line); border-radius:8px; background:#0c131e; color:var(--text); }
+        input:focus,select:focus { outline:2px solid rgba(85,167,255,.35); border-color:var(--blue); }
+        .check { flex-direction:row; align-items:center; padding-top:25px; }
+        .check input { width:17px; height:17px; }
+        .actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:18px; }
+        button { padding:10px 15px; border:1px solid #376da7; border-radius:8px; background:#1b5b97; color:white; cursor:pointer; font-weight:700; }
+        button.secondary { background:#172233; border-color:#34465e; }
+        button.danger { background:#642633; border-color:#9b4051; }
+        button:disabled { opacity:.45; cursor:not-allowed; }
+        .feedback { color:var(--muted); font-size:12px; margin-left:auto; }
+        .hint { color:var(--muted); font-size:12px; line-height:1.5; margin:13px 0 0; }
+        .run-meta { margin-top:12px; color:#bdd3ef; font-size:12px; font-variant-numeric:tabular-nums; }
+        @media(max-width:800px){.grid{grid-template-columns:1fr 1fr}.settings{grid-template-columns:1fr 1fr}.best-grid{grid-template-columns:1fr 1fr}.header{align-items:flex-start}.wide{grid-column:1/-1}}
+        @media(max-width:560px){.container{padding:24px 16px 40px}.grid,.settings{grid-template-columns:1fr}.controls,.best-grid{grid-template-columns:1fr}.header{display:block}.status{width:max-content;margin-top:16px}.wide{grid-column:auto}.feedback{width:100%;margin-left:0}}
         @media(prefers-reduced-motion:reduce){.bar{transition:none}}
     </style>
 </head>
@@ -57,6 +72,24 @@
         <div><div class="eyebrow">Race intelligence</div><h1>VT FSAE RL Training</h1><div class="subtitle">MuJoCo simulation · Gymnasium environment · PPO agent</div></div>
         <div class="status waiting" id="connection-status">WAITING</div>
     </header>
+
+    <div class="section-title"><h2>Simulation controls</h2><span>Saved automatically for future launches</span></div>
+    <section class="card">
+        <form id="settings-form">
+            <div class="settings">
+                <label class="field">Total training timesteps<input id="total-timesteps" type="number" min="2048" max="100000000" step="2048"></label>
+                <label class="field">Maximum steps per iteration<input id="episode-max-steps" type="number" min="100" max="1000000" step="100"></label>
+                <label class="field">Parallel iterations<input id="parallel-envs" type="number" min="1" max="16" step="1"></label>
+                <label class="field">Simulation speed<select id="simulation-speed"><option value="0">Unlimited (fastest)</option><option value="4">4× real time</option><option value="2">2× real time</option><option value="1">1× real time</option><option value="0.5">0.5× real time</option><option value="0.25">0.25× real time</option></select></label>
+                <label class="field">Checkpoint every N steps<input id="checkpoint-frequency" type="number" min="1000" max="10000000" step="1000"></label>
+                <label class="field">Render every N steps<input id="render-every" type="number" min="1" max="1000" step="1"></label>
+                <label class="field check"><input id="render-enabled" type="checkbox"> Open MuJoCo viewer</label>
+            </div>
+            <p class="hint">Speed and iteration length update during a run. You can extend the total timestep target while it is running. Parallel count and rendering apply to the next run; rendering is automatically disabled for parallel runs.</p>
+            <div class="actions"><button type="submit" class="secondary">Save controls</button><button type="button" id="start-training">Start new run</button><button type="button" id="stop-training" class="danger">Stop safely</button><span class="feedback" id="control-feedback"></span></div>
+            <div class="run-meta" id="run-meta">No archived run selected.</div>
+        </form>
+    </section>
 
     <div class="section-title"><h2>Live telemetry</h2><span>Smoothed real-time feed</span></div>
     <section class="grid">
@@ -81,11 +114,11 @@
     <section class="card table-wrap" id="history"><div class="empty">No completed iterations yet.</div></section>
 </main>
 <script>
-const ids = Object.fromEntries(["episode","total-steps","episode-step","reward","episode-reward","speed","track-distance","waypoint","waypoint-bar","throttle","steering","throttle-indicator","steering-indicator","connection-status","best-card","history"].map(id => [id, document.getElementById(id)]));
+const ids = Object.fromEntries(["episode","total-steps","episode-step","reward","episode-reward","speed","track-distance","waypoint","waypoint-bar","throttle","steering","throttle-indicator","steering-indicator","connection-status","best-card","history","settings-form","total-timesteps","episode-max-steps","parallel-envs","simulation-speed","checkpoint-frequency","render-every","render-enabled","start-training","stop-training","control-feedback","run-meta"].map(id => [id, document.getElementById(id)]));
 const motionReduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const current = {reward:0, episode_reward:0, speed:0, track_distance:0, throttle:0, steering:0};
 const target = {...current};
-let requestActive = false, failures = 0, hasSample = false, savedSignature = "";
+let requestActive = false, failures = 0, hasSample = false, savedSignature = "", configInitialized = false;
 const number = (value, fallback=0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const signed = value => `${value >= 0 ? "+" : ""}${value.toFixed(3)}`;
 const escapeHtml = value => String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
@@ -102,7 +135,18 @@ function renderBest(best) {
 }
 function renderHistory(history) {
     if (!history?.length) { ids.history.innerHTML = '<div class="empty">No completed iterations yet.</div>'; return; }
-    ids.history.innerHTML = `<table><thead><tr><th>Iteration</th><th>Progress</th><th>Reward</th><th>Steps</th><th>Peak speed</th><th>Avg. line distance</th><th>Result</th></tr></thead><tbody>${[...history].reverse().map(run => `<tr><td>#${number(run.iteration)}</td><td>${number(run.waypoints_reached)} / ${number(run.total_waypoints)}</td><td>${number(run.episode_reward).toFixed(3)}</td><td>${number(run.episode_steps).toLocaleString()}</td><td>${number(run.peak_speed).toFixed(3)} m/s</td><td>${number(run.average_track_distance).toFixed(3)} m</td><td class="${run.completed_course ? "complete" : ""}">${run.completed_course ? "Complete" : "Ended"}</td></tr>`).join("")}</tbody></table>`;
+    ids.history.innerHTML = `<table><thead><tr><th>Iteration</th><th>Progress</th><th>Reward</th><th>Steps</th><th>Peak speed</th><th>Avg. line distance</th><th>Result</th></tr></thead><tbody>${history.map(run => `<tr><td>${run.run_id ? `${escapeHtml(run.run_id.slice(-6))} · W${number(run.worker_id)+1} · ` : ""}#${number(run.iteration)}</td><td>${number(run.waypoints_reached)} / ${number(run.total_waypoints)}</td><td>${number(run.episode_reward).toFixed(3)}</td><td>${number(run.episode_steps).toLocaleString()}</td><td>${number(run.peak_speed).toFixed(3)} m/s</td><td>${number(run.average_track_distance).toFixed(3)} m</td><td class="${run.completed_course ? "complete" : ""}">${run.completed_course ? "Complete" : "Ended"}</td></tr>`).join("")}</tbody></table>`;
+}
+function readControls() {
+    return {total_timesteps:number(ids["total-timesteps"].value), episode_max_steps:number(ids["episode-max-steps"].value), parallel_envs:number(ids["parallel-envs"].value), simulation_speed:number(ids["simulation-speed"].value), checkpoint_frequency:number(ids["checkpoint-frequency"].value), render_every:number(ids["render-every"].value), render:ids["render-enabled"].checked};
+}
+function showConfig(config) {
+    ids["total-timesteps"].value=config.total_timesteps; ids["episode-max-steps"].value=config.episode_max_steps; ids["parallel-envs"].value=config.parallel_envs; ids["simulation-speed"].value=String(config.simulation_speed); ids["checkpoint-frequency"].value=config.checkpoint_frequency; ids["render-every"].value=config.render_every; ids["render-enabled"].checked=config.render;
+}
+async function command(url, body={}) {
+    ids["control-feedback"].textContent="Working…";
+    try { const response=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}); const data=await response.json(); if(!response.ok) throw new Error(data.error || `HTTP ${response.status}`); ids["control-feedback"].textContent=url.endsWith("start") ? "Run started." : url.endsWith("stop") ? "Safe stop requested." : "Controls saved."; if(data.config) showConfig(data.config); await poll(); }
+    catch(error) { ids["control-feedback"].textContent=error.message; }
 }
 function applySample(data) {
     ids.episode.textContent = number(data.episode).toLocaleString(); ids["total-steps"].textContent = number(data.total_steps).toLocaleString(); ids["episode-step"].textContent = number(data.episode_step).toLocaleString();
@@ -113,7 +157,10 @@ function applySample(data) {
     if (nextSavedSignature !== savedSignature) {
         renderBest(data.best_car); renderHistory(data.history); savedSignature = nextSavedSignature;
     }
-    ids["connection-status"].textContent=data.waiting ? "WAITING" : "LIVE"; ids["connection-status"].className=`status${data.waiting ? " waiting" : ""}`;
+    if (!configInitialized && data.config) { showConfig(data.config); configInitialized=true; }
+    const runState=data.run?.state || "idle", running=["starting","running"].includes(runState); ids["start-training"].disabled=running; ids["stop-training"].disabled=!running;
+    ids["run-meta"].textContent=data.run_id ? `Run ${data.run_id} · ${runState} · ${number(data.active_workers)} worker${number(data.active_workers)===1?"":"s"} · ${number(data.run?.timesteps_completed).toLocaleString()} learned steps` : "No archived run selected.";
+    ids["connection-status"].textContent=data.waiting ? "WAITING" : `LIVE · ${number(data.active_workers,1)}`; ids["connection-status"].className=`status${data.waiting ? " waiting" : ""}`;
 }
 async function poll() {
     if (requestActive) return; requestActive=true;
@@ -127,7 +174,10 @@ function animate() {
     ids.throttle.textContent=signed(current.throttle); ids.steering.textContent=signed(current.steering); ids["throttle-indicator"].style.left=`${Math.max(0,Math.min(100,(current.throttle+1)*50))}%`; ids["steering-indicator"].style.left=`${Math.max(0,Math.min(100,(current.steering+1)*50))}%`;
     requestAnimationFrame(animate);
 }
-poll(); setInterval(poll,250); requestAnimationFrame(animate);
+ids["settings-form"].addEventListener("submit", event => { event.preventDefault(); command("/api/config",readControls()); });
+ids["start-training"].addEventListener("click",() => command("/api/training/start",readControls()));
+ids["stop-training"].addEventListener("click",() => command("/api/training/stop"));
+poll(); setInterval(poll,500); requestAnimationFrame(animate);
 </script>
 </body>
 </html>

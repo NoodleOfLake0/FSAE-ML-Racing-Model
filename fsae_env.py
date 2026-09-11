@@ -5,7 +5,10 @@ import mujoco
 import mujoco.viewer
 import numpy as np
 from pathlib import Path
+import time
 
+from training_archive import RunArchive
+from training_control import load_config
 from training_stats import TrainingHistory, atomic_write_json
 
 
@@ -21,6 +24,10 @@ class FSAEEnv(gym.Env):
         self,
         xml_path="car.xml",
         render_mode=None,
+        run_id=None,
+        worker_id=0,
+        controls_path=None,
+        runs_dir=None,
     ):
         self.step_count = 0          # current episode
         self.total_env_steps = 0     # entire run
@@ -30,7 +37,13 @@ class FSAEEnv(gym.Env):
         self.episode_peak_speed = 0.0
         self.episode_track_distance_total = 0.0
         self.episode_best_waypoint = 0
-        self.history = TrainingHistory(BASE_DIR / "training_history.json")
+        self.history = TrainingHistory(BASE_DIR / "training_history.json") if run_id is None else None
+        self.archive = RunArchive(runs_dir or BASE_DIR / "runs", run_id, worker_id) if run_id else None
+        self.controls_path = Path(controls_path) if controls_path else BASE_DIR / "training_config.json"
+        self.worker_id = worker_id
+        self._control_poll_counter = 0
+        self._last_status_publish = 0.0
+        self.simulation_speed = 0.0
         
 
         super().__init__()
@@ -137,6 +150,15 @@ class FSAEEnv(gym.Env):
                 show_left_ui=False,
                 show_right_ui=False
             )
+
+        self._refresh_controls()
+
+    def _refresh_controls(self):
+        """Apply controls that are safe to change while an episode is running."""
+        config = load_config(self.controls_path)
+        self.max_steps = config["episode_max_steps"]
+        self.simulation_speed = config["simulation_speed"]
+        self.render_every = config["render_every"]
 
     # Define the renderer for the program 
     def render(self):
@@ -285,6 +307,12 @@ class FSAEEnv(gym.Env):
 
     def step(self, action):
 
+        started_at = time.perf_counter()
+        self._control_poll_counter += 1
+        if self._control_poll_counter >= 25:
+            self._control_poll_counter = 0
+            self._refresh_controls()
+
         action = np.clip(
             action,
             self.action_space.low,
@@ -384,7 +412,7 @@ class FSAEEnv(gym.Env):
 
         if terminated or truncated:
             self.episode_count += 1
-            self.history.record({
+            episode = {
                 "iteration": self.episode_count,
                 "total_steps": self.total_env_steps,
                 "episode_steps": self.step_count,
@@ -398,7 +426,11 @@ class FSAEEnv(gym.Env):
                     self.episode_track_distance_total / self.step_count
                 ),
                 "final_track_distance": float(track_distance),
-            })
+            }
+            if self.archive is not None:
+                self.archive.record_episode(episode)
+            elif self.history is not None:
+                self.history.record(episode)
 
         stats = {
             "episode": self.episode_count,
@@ -418,7 +450,21 @@ class FSAEEnv(gym.Env):
             "episode_reward": self.episode_reward,
         }
 
-        atomic_write_json(BASE_DIR / "training_status.json", stats)
+        now = time.perf_counter()
+        if terminated or truncated or now - self._last_status_publish >= 0.1:
+            if self.archive is not None:
+                self.archive.publish_status(stats)
+            else:
+                atomic_write_json(BASE_DIR / "training_status.json", stats, best_effort=True)
+            self._last_status_publish = now
+
+        # A speed of zero means unlimited throughput. Other values express
+        # simulated seconds per wall-clock second (0.5x, 1x, 2x, and so on).
+        if self.simulation_speed > 0:
+            simulated_step = self.model.opt.timestep * self.frame_skip
+            remaining = simulated_step / self.simulation_speed - (time.perf_counter() - started_at)
+            if remaining > 0:
+                time.sleep(remaining)
 
         # if self.render_mode == "human":
             #print(

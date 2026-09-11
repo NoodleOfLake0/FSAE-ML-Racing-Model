@@ -4,20 +4,56 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import time
+import warnings
 from pathlib import Path
 from typing import Any
 
 
-def atomic_write_json(path: str | Path, payload: dict[str, Any]) -> None:
-    """Write JSON without ever exposing a partially-written file to readers."""
+def atomic_write_json(
+    path: str | Path, payload: dict[str, Any], *, best_effort: bool = False
+) -> bool:
+    """Publish complete JSON, retrying temporary permission failures.
+
+    Best-effort telemetry keeps the previous snapshot if a file stays locked.
+    Other IO errors and serialization errors still propagate.
+    """
     destination = Path(path)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = destination.with_suffix(destination.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8") as file:
-        json.dump(payload, file)
-        file.flush()
-        os.fsync(file.fileno())
-    os.replace(temporary, destination)
+    temporary = None
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=destination.parent,
+            prefix=destination.name + ".", suffix=".tmp", delete=False,
+        ) as file:
+            temporary = Path(file.name)
+            json.dump(payload, file)
+            file.flush()
+            os.fsync(file.fileno())
+        for attempt in range(4):
+            try:
+                os.replace(temporary, destination)
+                return True
+            except PermissionError:
+                if attempt == 3:
+                    raise
+                time.sleep(0.01 * (attempt + 1))
+    except PermissionError:
+        if not best_effort:
+            raise
+        warnings.warn(
+            f"Could not update {destination}: permission denied; "
+            "keeping the previous statistics snapshot.",
+            RuntimeWarning,
+        )
+        return False
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass  # Cleanup must not mask the write result.
 
 
 def load_json(path: str | Path, default: Any) -> Any:
@@ -56,4 +92,5 @@ class TrainingHistory:
         atomic_write_json(
             self.path,
             {"best": self.best, "history": self.history},
+            best_effort=True,
         )

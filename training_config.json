@@ -1,0 +1,10 @@
+{
+  "total_timesteps": 200000,
+  "episode_max_steps": 2000,
+  "parallel_envs": 1,
+  "simulation_speed": 0.0,
+  "render": true,
+  "render_every": 1,
+  "checkpoint_frequency": 25000,
+  "stop_requested": false
+}
