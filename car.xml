@@ -1,0 +1,289 @@
+<mujoco model="FSAE cone track">
+
+  <compiler autolimits="true"/>
+
+  <!-- ========================= -->
+  <!-- DEFAULTS                  -->
+  <!-- ========================= -->
+
+  <default>
+
+    <!-- Original car defaults -->
+    <joint damping=".03" actuatorfrcrange="-0.5 0.5"/>
+
+    <default class="wheel">
+      <geom type="cylinder"
+            size=".03 .01"
+            rgba=".5 .5 1 1"/>
+    </default>
+
+    <default class="decor">
+      <site type="box"
+            rgba=".5 1 .5 1"/>
+    </default>
+
+    <!-- Track cone defaults -->
+    <default class="orange_cone">
+      <geom type="mesh"
+            mesh="track_cone"
+            rgba="1 .35 0 1"
+            contype="0"
+            conaffinity="0"/>
+    </default>
+
+    <default class="blue_cone">
+      <geom type="mesh"
+            mesh="track_cone"
+            rgba="0 .25 1 1"
+            contype="0"
+            conaffinity="0"/>
+    </default>
+
+  </default>
+
+
+  <!-- ========================= -->
+  <!-- ASSETS                    -->
+  <!-- ========================= -->
+
+  <asset>
+
+    <texture name="grid"
+             type="2d"
+             builtin="checker"
+             width="512"
+             height="512"
+             rgb1=".1 .2 .3"
+             rgb2=".2 .3 .4"/>
+
+    <material name="grid"
+              texture="grid"
+              texrepeat="1 1"
+              texuniform="true"
+              reflectance=".2"/>
+
+    <!-- Original car chassis -->
+    <mesh name="chasis"
+          scale=".01 .006 .0015"
+          vertex="
+               9   2   0
+              -10  10  10
+               9  -2   0
+               10  3  -10
+               10 -3  -10
+              -8   10 -10
+              -10 -10  10
+              -8  -10 -10
+              -5   0   20"/>
+
+    <!--
+      Actual cone mesh.
+
+      Approx:
+      radius = 0.010 m
+      total height = 0.050 m
+    -->
+    <mesh name="track_cone"
+          builtin="cone"
+          params="12 0"
+          scale=".010 .010 .025"/>
+
+  </asset>
+
+
+  <!-- ========================= -->
+  <!-- WORLD                     -->
+  <!-- ========================= -->
+
+  <worldbody>
+
+    <!-- Ground -->
+    <geom name="ground"
+          type="plane"
+          size="2.5 2.5 .01"
+          material="grid"/>
+
+
+    <!-- ======================================== -->
+    <!-- ORANGE / LEFT SIDE                       -->
+    <!-- ======================================== -->
+
+    <!-- Entry straight -->
+    <geom class="orange_cone" pos=".20  .11 .025"/>
+    <geom class="orange_cone" pos=".30  .11 .025"/>
+    <geom class="orange_cone" pos=".40  .11 .025"/>
+
+    <!-- First bend -->
+    <geom class="orange_cone" pos=".50  .12 .025"/>
+    <geom class="orange_cone" pos=".60  .15 .025"/>
+    <geom class="orange_cone" pos=".70  .20 .025"/>
+    <geom class="orange_cone" pos=".79  .26 .025"/>
+    <geom class="orange_cone" pos=".87  .33 .025"/>
+
+    <!-- Top of S -->
+    <geom class="orange_cone" pos=".95  .38 .025"/>
+    <geom class="orange_cone" pos="1.05 .40 .025"/>
+    <geom class="orange_cone" pos="1.15 .39 .025"/>
+
+    <!-- Return bend -->
+    <geom class="orange_cone" pos="1.25 .35 .025"/>
+    <geom class="orange_cone" pos="1.35 .29 .025"/>
+    <geom class="orange_cone" pos="1.45 .21 .025"/>
+
+    <!-- Exit -->
+    <geom class="orange_cone" pos="1.55 .16 .025"/>
+    <geom class="orange_cone" pos="1.65 .14 .025"/>
+    <geom class="orange_cone" pos="1.75 .14 .025"/>
+
+
+    <!-- ======================================== -->
+    <!-- BLUE / RIGHT SIDE                        -->
+    <!-- ======================================== -->
+
+    <!-- Entry straight -->
+    <geom class="blue_cone" pos=".20 -.11 .025"/>
+    <geom class="blue_cone" pos=".30 -.11 .025"/>
+    <geom class="blue_cone" pos=".40 -.11 .025"/>
+
+    <!-- First bend -->
+    <geom class="blue_cone" pos=".50 -.10 .025"/>
+    <geom class="blue_cone" pos=".60 -.07 .025"/>
+    <geom class="blue_cone" pos=".70 -.02 .025"/>
+    <geom class="blue_cone" pos=".79  .04 .025"/>
+    <geom class="blue_cone" pos=".87  .11 .025"/>
+
+    <!-- Top of S -->
+    <geom class="blue_cone" pos=".95 .16 .025"/>
+    <geom class="blue_cone" pos="1.05 .18 .025"/>
+    <geom class="blue_cone" pos="1.15 .17 .025"/>
+
+    <!-- Return bend -->
+    <geom class="blue_cone" pos="1.25 .13 .025"/>
+    <geom class="blue_cone" pos="1.35 .07 .025"/>
+    <geom class="blue_cone" pos="1.45 -.01 .025"/>
+
+    <!-- Exit -->
+    <geom class="blue_cone" pos="1.55 -.06 .025"/>
+    <geom class="blue_cone" pos="1.65 -.08 .025"/>
+    <geom class="blue_cone" pos="1.75 -.08 .025"/>
+
+
+    <!-- ========================= -->
+    <!-- ORIGINAL CAR              -->
+    <!-- ========================= -->
+
+    <body name="car" pos="0 0 .03">
+
+      <freejoint/>
+
+      <light name="top light"
+             pos="0 0 2"
+             mode="trackcom"
+             diffuse=".4 .4 .4"/>
+
+      <geom name="chasis"
+            type="mesh"
+            mesh="chasis"/>
+
+      <geom name="front wheel"
+            pos=".08 0 -.015"
+            type="sphere"
+            size=".015"
+            condim="1"
+            priority="1"/>
+
+      <light name="front light"
+             pos=".1 0 .02"
+             dir="2 0 -1"
+             diffuse="1 1 1"/>
+
+      <!-- Left rear wheel -->
+      <body name="left wheel"
+            pos="-.07 .06 0"
+            zaxis="0 1 0">
+
+        <joint name="left"/>
+
+        <geom class="wheel"/>
+
+        <site class="decor"
+              size=".006 .025 .012"/>
+
+        <site class="decor"
+              size=".025 .006 .012"/>
+
+      </body>
+
+      <!-- Right rear wheel -->
+      <body name="right wheel"
+            pos="-.07 -.06 0"
+            zaxis="0 1 0">
+
+        <joint name="right"/>
+
+        <geom class="wheel"/>
+
+        <site class="decor"
+              size=".006 .025 .012"/>
+
+        <site class="decor"
+              size=".025 .006 .012"/>
+
+      </body>
+
+    </body>
+
+  </worldbody>
+
+
+  <!-- ========================= -->
+  <!-- DIFFERENTIAL DRIVE        -->
+  <!-- ========================= -->
+
+  <tendon>
+
+    <fixed name="forward">
+      <joint joint="left" coef=".5"/>
+      <joint joint="right" coef=".5"/>
+    </fixed>
+
+    <fixed name="turn">
+      <joint joint="left" coef="-.5"/>
+      <joint joint="right" coef=".5"/>
+    </fixed>
+
+  </tendon>
+
+
+  <!-- ========================= -->
+  <!-- CONTROLS                  -->
+  <!-- ========================= -->
+
+  <actuator>
+
+    <motor name="forward"
+           tendon="forward"
+           ctrlrange="-1 1"/>
+
+    <motor name="turn"
+           tendon="turn"
+           ctrlrange="-1 1"/>
+
+  </actuator>
+
+
+  <!-- ========================= -->
+  <!-- SENSORS                   -->
+  <!-- ========================= -->
+
+  <sensor>
+
+    <jointactuatorfrc name="right"
+                      joint="right"/>
+
+    <jointactuatorfrc name="left"
+                      joint="left"/>
+
+  </sensor>
+
+</mujoco>
